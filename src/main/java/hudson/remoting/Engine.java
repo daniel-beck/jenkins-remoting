@@ -90,8 +90,13 @@ public class Engine extends Thread {
      * <p>
      * This value is determined from {@link #candidateUrls} after a successful connection.
      * Note that this URL <b>DOES NOT</b> have "tcpSlaveAgentListener" in it.
+     *
+     * @deprecated Using jenkinsHost instead to support reverse proxies on different hosts.
      */
+    @Deprecated
     private URL hudsonUrl;
+
+    private String jenkinsHost;
 
     private final String secretKey;
     public final String slaveName;
@@ -132,6 +137,7 @@ public class Engine extends Thread {
         this.jarCache = jarCache;
     }
 
+    @Deprecated
     public URL getHudsonUrl() {
         return hudsonUrl;
     }
@@ -207,7 +213,7 @@ public class Engine extends Thread {
                             }
                             continue;
                         }
-                        port = con.getHeaderField("X-Hudson-JNLP-Port");
+                        port = con.getHeaderField("X-Jenkins-JNLP-Port");
                         if(con.getResponseCode()!=200) {
                             if(firstError==null)
                                 firstError = new Exception(salURL+" is invalid: "+con.getResponseCode()+" "+con.getResponseMessage());
@@ -224,6 +230,15 @@ public class Engine extends Thread {
 
                     // this URL works. From now on, only try this URL
                     hudsonUrl = url;
+
+                    // If Jenkins points to a different host than the one with the web UI, connect there instead
+                    String host = con.getHeaderField("X-Jenkins-JNLP-Host");
+                    if (host == null) {
+                        this.jenkinsHost = hudsonUrl.getHost();
+                    } else {
+                        LOGGER.info("The server provided a different JNLP host to connect to: " + host);
+                        this.jenkinsHost = host;
+                    }
                     firstError = null;
                     candidateUrls = Collections.singletonList(hudsonUrl);
                     break;
@@ -335,9 +350,10 @@ public class Engine extends Thread {
      * Connects to TCP slave port, with a few retries.
      */
     private Socket connect(String port) throws IOException, InterruptedException {
-        String host = this.hudsonUrl.getHost();
+        String host = this.jenkinsHost;
 
         if(tunnel!=null) {
+            LOGGER.info("Tunnel is set to " + tunnel);
             String[] tokens = tunnel.split(":",3);
             if(tokens.length!=2)
                 throw new IOException("Illegal tunneling parameter: "+tunnel);
